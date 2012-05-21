@@ -20,6 +20,12 @@
 @synthesize navigationItem;
 @synthesize toolBar;
 @synthesize shareMessage;
+@synthesize shareImage;
+@synthesize twitterAccountNumber;
+@synthesize twitterAccountsArray;
+@synthesize pickerView;
+@synthesize pickerToolbar;
+@synthesize pickerViewPopup;
 @synthesize pendingView;
 @synthesize doTweet;
 @synthesize doFacebook;
@@ -99,7 +105,8 @@
     NSLog(@"operationSendTwitter");
     
     if (doTweet && [TWTweetComposeViewController canSendTweet]) {
-        [self sendTwitter:shareMessage];
+        UITextView *textView = (UITextView*)[self.view viewWithTag:1001];
+        [self sendTwitter:textView.text accountNumber:twitterAccountNumber];
     } else {
         [self performSelectorOnMainThread:@selector(operationSendFacebook) withObject:nil waitUntilDone:YES];
     }
@@ -276,6 +283,10 @@
     
     if (switchControl.tag == 11001) {
         doTweet = switchControl.on;
+        
+        if (doTweet) {
+            [self twitterAccountCheck];
+        }
     } else {
         doFacebook = switchControl.on;
         
@@ -304,7 +315,31 @@
 
 #pragma mark - Send Action
 
-- (void)sendTwitter:(NSString *)message {
+- (void)twitterAccountCheck {
+    // Create an account store object.
+    ACAccountStore *accountStore = [[ACAccountStore alloc] init];
+    
+    // Create an account type that ensures Twitter accounts are retrieved.
+    ACAccountType *accountType = [accountStore accountTypeWithAccountTypeIdentifier:ACAccountTypeIdentifierTwitter];
+    
+    // Request access from the user to use their Twitter accounts.
+    [accountStore requestAccessToAccountsWithType:accountType withCompletionHandler:^(BOOL granted, NSError *error) {
+        if(granted) {
+            // Get the list of Twitter accounts.
+            NSArray *accountsArray = [accountStore accountsWithAccountType:accountType];
+            
+            // For the sake of brevity, we'll assume there is only one Twitter account present.
+            // You would ideally ask the user which account they want to tweet from, if there is more than one Twitter account present.
+            if ([accountsArray count] == 1) {
+                twitterAccountNumber = 0;
+            } else if ([accountsArray count] > 1) {
+                [self selectTwitterAccount:accountsArray];
+            }
+        }
+    }];
+}
+
+- (void)sendTwitter:(NSString *)message accountNumber:(NSInteger)accountNumber {
     // Create an account store object.
 	ACAccountStore *accountStore = [[ACAccountStore alloc] init];
 	
@@ -317,30 +352,109 @@
 			// Get the list of Twitter accounts.
             NSArray *accountsArray = [accountStore accountsWithAccountType:accountType];
 			
-			// For the sake of brevity, we'll assume there is only one Twitter account present.
-			// You would ideally ask the user which account they want to tweet from, if there is more than one Twitter account present.
-			if ([accountsArray count] > 0) {
-				// Grab the initial Twitter account to tweet from.
-				ACAccount *twitterAccount = [accountsArray objectAtIndex:0];
-				
-				// Create a request, which in this example, posts a tweet to the user's timeline.
-				// This example uses version 1 of the Twitter API.
-				// This may need to be changed to whichever version is currently appropriate.
-				TWRequest *postRequest = [[TWRequest alloc] initWithURL:[NSURL URLWithString:@"https://api.twitter.com/1/statuses/update.json"] parameters:[NSDictionary dictionaryWithObject:message forKey:@"status"] requestMethod:TWRequestMethodPOST];
-				
-				// Set the account used to post the tweet.
-				[postRequest setAccount:twitterAccount];
-				
-				// Perform the request created above and create a handler block to handle the response.
-				[postRequest performRequestWithHandler:^(NSData *responseData, NSHTTPURLResponse *urlResponse, NSError *error) {
-					NSString *output = [NSString stringWithFormat:@"HTTP response status: %i", [urlResponse statusCode]];
-                    NSLog(@"%@", output);
-					
-                    [self performSelectorOnMainThread:@selector(operationSendFacebook) withObject:nil waitUntilDone:YES];
-				}];
-			}
+            ACAccount *twitterAccount = [accountsArray objectAtIndex:accountNumber];
+            
+            // Create a request, which in this example, posts a tweet to the user's timeline.
+            // This example uses version 1 of the Twitter API.
+            // This may need to be changed to whichever version is currently appropriate.
+            
+            NSString *url;
+            if (shareImage) {
+                url = @"https://upload.twitter.com/1/statuses/update_with_media.json";
+            } else {
+                url = @"https://api.twitter.com/1/statuses/update.json";
+            }
+            
+            TWRequest *postRequest = [[TWRequest alloc] initWithURL:[NSURL URLWithString:url] parameters:nil requestMethod:TWRequestMethodPOST];
+            
+            // Set the account used to post the tweet.
+            [postRequest setAccount:twitterAccount];
+            
+            if (shareImage) {
+                NSData *data = UIImagePNGRepresentation(shareImage);
+                
+                [postRequest addMultiPartData:data 
+                                     withName:@"media[]" 
+                                         type:@"multipart/form-data"];
+            }
+            
+            [postRequest addMultiPartData:[message dataUsingEncoding:NSUTF8StringEncoding] 
+                                 withName:@"status" 
+                                     type:@"multipart/form-data"];
+            
+            // Perform the request created above and create a handler block to handle the response.
+            [postRequest performRequestWithHandler:^(NSData *responseData, NSHTTPURLResponse *urlResponse, NSError *error) {
+                NSString *output = [NSString stringWithFormat:@"HTTP response status: %i", [urlResponse statusCode]];
+                NSLog(@"%@", output);
+                
+                [self performSelectorOnMainThread:@selector(operationSendFacebook) withObject:nil waitUntilDone:YES];
+            }];
         }
 	}];
+}
+
+- (void)selectTwitterAccount:(NSArray*)accountsArray {
+    twitterAccountsArray = [[NSMutableArray alloc] init];
+    
+    for (NSInteger i = 0; i < [accountsArray count]; i++) {
+        ACAccount *twitterAccount = [accountsArray objectAtIndex:i];
+        [twitterAccountsArray addObject:[NSString stringWithFormat:@"@%@", twitterAccount.username]];
+    }
+    
+    [self performSelectorOnMainThread:@selector(showTwitterAccountPickerView) withObject:nil waitUntilDone:NO];
+}
+
+- (void)showTwitterAccountPickerView {
+    pickerViewPopup = [[UIActionSheet alloc] initWithTitle:@"Select Account"
+                                                  delegate:self
+                                         cancelButtonTitle:nil
+                                    destructiveButtonTitle:nil
+                                         otherButtonTitles:nil];
+    
+    pickerView = [[UIPickerView alloc] initWithFrame:CGRectMake(0,44,0,0)];
+    
+    pickerView.delegate = self;
+    pickerView.showsSelectionIndicator = YES;
+    
+    pickerToolbar = [[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, 320, 44)];
+    pickerToolbar.barStyle = UIBarStyleBlackOpaque;
+    [pickerToolbar sizeToFit];
+    
+    NSMutableArray *barItems = [[NSMutableArray alloc] init];
+    
+    UIBarButtonItem *flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:self action:nil];
+    [barItems addObject:flexSpace];
+    
+    UIBarButtonItem *doneBtn = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(closePicker:)];
+    [barItems addObject:doneBtn];
+    
+    [pickerToolbar setItems:barItems animated:YES];
+    
+    [pickerViewPopup addSubview:pickerToolbar];
+    [pickerViewPopup addSubview:pickerView];
+    [pickerViewPopup showInView:self.view];
+    [pickerViewPopup setBounds:CGRectMake(0,0,320, 476)];
+}
+
+- (BOOL)closePicker:(id)sender {
+    twitterAccountNumber = [pickerView selectedRowInComponent:0];
+    NSLog(@"TwitterAccount: %@", [twitterAccountsArray objectAtIndex:twitterAccountNumber]);
+    
+    [pickerViewPopup dismissWithClickedButtonIndex:0 animated:YES];
+    
+    return YES;
+}
+
+- (NSInteger)numberOfComponentsInPickerView:(UIPickerView *)pickerView{
+    return 1;
+}
+
+- (NSInteger)pickerView:(UIPickerView *)pickerView numberOfRowsInComponent:(NSInteger)component{
+    return [twitterAccountsArray count];
+}
+
+- (NSString *)pickerView:(UIPickerView *)pickerView titleForRow:(NSInteger)row forComponent:(NSInteger)component {
+    return [twitterAccountsArray objectAtIndex:row];
 }
 
 - (void)sendFacebook:(NSString *)message url:(NSString*)url {

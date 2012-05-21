@@ -21,12 +21,20 @@ enum {
 };
 typedef NSUInteger ATShareViewControllerResult;
 
-@interface ATShareViewController : UIViewController <UITableViewDelegate, UITableViewDataSource, UITextViewDelegate, FBSessionDelegate, FBRequestDelegate> {
+@interface ATShareViewController : UIViewController <UITableViewDelegate, UITableViewDataSource, UITextViewDelegate, FBSessionDelegate, FBRequestDelegate, UIActionSheetDelegate, UIPickerViewDelegate> {
     IBOutlet UITableView *tableView;
     IBOutlet UINavigationBar *navigationBar;
     IBOutlet UINavigationItem *navigationItem;
     UIToolbar *toolBar;
     NSString *shareMessage;
+    UIImage *shareImage;
+    
+    NSInteger twitterAccountNumber;
+    NSMutableArray *twitterAccountsArray;
+    UIPickerView *pickerView;
+    UIToolbar *pickerToolbar;
+    UIActionSheet *pickerViewPopup;
+    
     PendingView *pendingView;
     BOOL doTweet;
     BOOL doFacebook;
@@ -39,13 +47,19 @@ typedef NSUInteger ATShareViewControllerResult;
 @property (nonatomic, retain) IBOutlet UINavigationItem *navigationItem;
 @property (nonatomic, retain) UIToolbar *toolBar;
 @property (nonatomic, retain) NSString *shareMessage;
+@property (nonatomic, retain) UIImage *shareImage;
+@property (nonatomic) NSInteger twitterAccountNumber;
+@property (nonatomic, retain) NSMutableArray *twitterAccountsArray;
+@property (nonatomic, retain) UIPickerView *pickerView;
+@property (nonatomic, retain) UIToolbar *pickerToolbar;
+@property (nonatomic, retain) UIActionSheet *pickerViewPopup;
 @property (nonatomic, retain) PendingView *pendingView;
 @property (nonatomic) BOOL doTweet;
 @property (nonatomic) BOOL doFacebook;
 @property (weak, nonatomic) id<ATShareViewControllerDelegate> delegate;
 
 - (void)sendFacebook:(NSString *)message url:(NSString*)url;
-- (void)sendTwitter:(NSString *)message;
+- (void)sendTwitter:(NSString *)message accountNumber:(NSInteger)accountNumber;
 
 - (void)cancelButtonPressed;
 - (void)doneButtonPressed;
